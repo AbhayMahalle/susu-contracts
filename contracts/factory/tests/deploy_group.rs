@@ -124,6 +124,83 @@ fn create_group_assigns_distinct_addresses_and_monotonic_ids() {
 }
 
 #[test]
+fn group_created_carries_the_terms_frozen_at_creation_not_the_current_config() {
+    // The Factory's fee and treasury change later via `set_fee` / `set_treasury`, so
+    // the creation event is the only time-stamped record of what each group froze.
+    let harness = Harness::new();
+    let creator = Address::generate(&harness.env);
+
+    let first =
+        harness
+            .client
+            .create_group(&creator, &harness.token, &(10 * ONE_USDC), &3u32, &ONE_WEEK);
+    // `events().all()` only reflects the most recent invocation, so capture now.
+    let first_events = harness
+        .env
+        .events()
+        .all()
+        .filter_by_contract(&harness.factory_id);
+
+    let new_treasury = Address::generate(&harness.env);
+    harness.client.set_fee(&25u32);
+    harness.client.set_treasury(&new_treasury);
+
+    let second = harness.client.create_group(
+        &creator,
+        &harness.token,
+        &(20 * ONE_USDC),
+        &2u32,
+        &(2 * ONE_WEEK),
+    );
+    let second_events = harness
+        .env
+        .events()
+        .all()
+        .filter_by_contract(&harness.factory_id);
+
+    let first_expected = susu_factory::GroupCreated {
+        creator: creator.clone(),
+        group: first.clone(),
+        group_id: 1,
+        token: harness.token.clone(),
+        contribution_amount: 10 * ONE_USDC,
+        member_capacity: 3,
+        fee_bps: 50,
+        treasury: harness.treasury.clone(),
+        frequency_seconds: ONE_WEEK,
+    }
+    .to_xdr(&harness.env, &harness.factory_id);
+    let second_expected = susu_factory::GroupCreated {
+        creator,
+        group: second.clone(),
+        group_id: 2,
+        token: harness.token.clone(),
+        contribution_amount: 20 * ONE_USDC,
+        member_capacity: 2,
+        fee_bps: 25,
+        treasury: new_treasury.clone(),
+        frequency_seconds: 2 * ONE_WEEK,
+    }
+    .to_xdr(&harness.env, &harness.factory_id);
+    assert!(first_events.events().contains(&first_expected));
+    assert!(second_events.events().contains(&second_expected));
+
+    // Each event agrees with what the group itself froze at construction.
+    let first_config = GroupContractClient::new(&harness.env, &first)
+        .get_group()
+        .config;
+    assert_eq!(first_config.fee_bps, 50);
+    assert_eq!(first_config.treasury, harness.treasury);
+    assert_eq!(first_config.frequency_seconds, ONE_WEEK);
+    let second_config = GroupContractClient::new(&harness.env, &second)
+        .get_group()
+        .config;
+    assert_eq!(second_config.fee_bps, 25);
+    assert_eq!(second_config.treasury, new_treasury);
+    assert_eq!(second_config.frequency_seconds, 2 * ONE_WEEK);
+}
+
+#[test]
 fn a_deployed_group_runs_a_full_cycle() {
     // The Factory's job is to produce a group that is correct; verify one end to end.
     let harness = Harness::new();
@@ -180,6 +257,9 @@ fn a_deployed_group_runs_a_full_cycle() {
         token: harness.token.clone(),
         contribution_amount: 10 * ONE_USDC,
         member_capacity: 3,
+        fee_bps: 50,
+        treasury: harness.treasury.clone(),
+        frequency_seconds: ONE_WEEK,
     }
     .to_xdr(&harness.env, &harness.factory_id);
     assert!(created_events.events().contains(&expected));
