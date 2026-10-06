@@ -193,7 +193,11 @@ impl FactoryContract {
         if config.paused {
             return Err(FactoryError::Paused);
         }
-        if contribution_amount <= 0 {
+        if contribution_amount <= 0
+            || contribution_amount
+                .checked_mul(member_capacity as i128)
+                .is_none()
+        {
             return Err(FactoryError::InvalidContributionAmount);
         }
         if !(MIN_MEMBERS..=MAX_MEMBERS).contains(&member_capacity) {
