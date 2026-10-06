@@ -343,7 +343,11 @@ impl GroupContract {
         frequency_seconds: u64,
         fee_bps: u32,
     ) {
-        if contribution_amount <= 0 {
+        if contribution_amount <= 0
+            || contribution_amount
+                .checked_mul(member_capacity as i128)
+                .is_none()
+        {
             soroban_sdk::panic_with_error!(&env, GroupError::InvalidContributionAmount);
         }
         if !(MIN_MEMBERS..=MAX_MEMBERS).contains(&member_capacity) {
