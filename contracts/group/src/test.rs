@@ -1041,3 +1041,22 @@ fn pool_balance_ignores_stray_transfers() {
         "stray funds cannot trigger or inflate a payout"
     );
 }
+
+#[test]
+fn contribute_returns_arithmetic_overflow_when_contribution_count_overflows() {
+    let setup = setup_started(3, 10 * ONE_USDC, MAX_FEE_BPS);
+    let client = setup.client();
+
+    setup.env.as_contract(&setup.group_id, || {
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&DataKey::RoundContributionCount(1), &u32::MAX);
+    });
+
+    assert_eq!(
+        client.try_contribute(&setup.member(0), &setup.amount, &1u32),
+        Err(Ok(GroupError::ArithmeticOverflow))
+    );
+}
