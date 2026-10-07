@@ -121,9 +121,11 @@ Returns the address of a registered group, or `GroupNotFound`.
 
 Returns the number of groups created. Also the most recently assigned group id.
 
-### `get_config() → FactoryConfig`
+### `get_config() → Result<FactoryConfig, FactoryError>`
 
-Returns the full protocol configuration, including the current pause state.
+Returns the full protocol configuration, including the current pause state. Extends
+the instance TTL, so a Factory that is only ever read does not archive. Returns
+`NotInitialized` rather than panicking if the configuration entry is absent.
 
 ### `version() → u32`
 
@@ -132,7 +134,8 @@ Returns `CONTRACT_VERSION`.
 ### Errors (`FactoryError`)
 
 `InvalidFeeBps = 1`, `InvalidContributionAmount = 2`, `InvalidMemberCapacity = 3`,
-`InvalidFrequency = 4`, `Paused = 5`, `GroupNotFound = 6`, `ArithmeticOverflow = 7`.
+`InvalidFrequency = 4`, `Paused = 5`, `GroupNotFound = 6`, `ArithmeticOverflow = 7`,
+`InvalidTreasury = 8`, `NotInitialized = 9`.
 
 ---
 
@@ -264,7 +267,11 @@ There is no dynamic or user-controlled storage key.
 | `Group(u32)` | `Address` | group id → deployed address |
 
 Both thresholds are `100_000` ledgers and extend to `518_400` ledgers (~30 days at
-5-second ledgers). Extension is best-effort and never gates an entry point's success.
+5-second ledgers). Extension is best-effort and never gates an entry point's success:
+the Factory extends its instance entry on every mutating call **and** on the read
+paths (`get_config`, `get_group_count`), and extends a group's persistent entry when
+`get_group` reads it. No entry point unwraps `Config`; a missing configuration is the
+typed `NotInitialized` error instead.
 
 ## Events
 
