@@ -1043,6 +1043,29 @@ fn pool_balance_ignores_stray_transfers() {
 }
 
 #[test]
+#[should_panic]
+fn constructor_rejects_treasury_equal_to_group() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let group_id = Address::generate(&env);
+    let factory = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    // Registering with treasury = group_id should panic
+    env.register_at(
+        &group_id,
+        GroupContract,
+        (
+            factory,
+            creator,
+            token,
+            group_id.clone(),
+            10_000_000i128,
+            3u32,
+            604_800u64,
+            50u32,
+        ),
 fn contribute_returns_arithmetic_overflow_when_contribution_count_overflows() {
     let setup = setup_started(3, 10 * ONE_USDC, MAX_FEE_BPS);
     let client = setup.client();

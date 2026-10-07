@@ -273,3 +273,28 @@ fn create_group_is_refused_while_paused() {
         "pausing must block new groups"
     );
 }
+
+#[test]
+#[should_panic]
+fn constructor_rejects_treasury_equal_to_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+    env.register(
+        FactoryContract,
+        (admin.clone(), wasm_hash, admin.clone(), MAX_FEE_BPS),
+    );
+}
+
+#[test]
+fn set_treasury_rejects_admin_or_factory_address() {
+    let (env, admin, _, client) = setup(MAX_FEE_BPS);
+    let factory_addr = client.address.clone();
+
+    let res_admin = client.try_set_treasury(&admin);
+    assert_eq!(res_admin, Err(Ok(FactoryError::InvalidTreasury)));
+
+    let res_factory = client.try_set_treasury(&factory_addr);
+    assert_eq!(res_factory, Err(Ok(FactoryError::InvalidTreasury)));
+}
