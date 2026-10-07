@@ -1041,3 +1041,30 @@ fn pool_balance_ignores_stray_transfers() {
         "stray funds cannot trigger or inflate a payout"
     );
 }
+
+#[test]
+#[should_panic]
+fn constructor_rejects_treasury_equal_to_group() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let group_id = Address::generate(&env);
+    let factory = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    // Registering with treasury = group_id should panic
+    env.register_at(
+        &group_id,
+        GroupContract,
+        (
+            factory,
+            creator,
+            token,
+            group_id.clone(),
+            10_000_000i128,
+            3u32,
+            604_800u64,
+            50u32,
+        ),
+    );
+}
