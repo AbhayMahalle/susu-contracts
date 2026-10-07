@@ -1066,6 +1066,10 @@ fn constructor_rejects_treasury_equal_to_group() {
             604_800u64,
             50u32,
         ),
+    );
+}
+
+#[test]
 fn contribute_returns_arithmetic_overflow_when_contribution_count_overflows() {
     let setup = setup_started(3, 10 * ONE_USDC, MAX_FEE_BPS);
     let client = setup.client();
