@@ -1066,5 +1066,20 @@ fn constructor_rejects_treasury_equal_to_group() {
             604_800u64,
             50u32,
         ),
+fn contribute_returns_arithmetic_overflow_when_contribution_count_overflows() {
+    let setup = setup_started(3, 10 * ONE_USDC, MAX_FEE_BPS);
+    let client = setup.client();
+
+    setup.env.as_contract(&setup.group_id, || {
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&DataKey::RoundContributionCount(1), &u32::MAX);
+    });
+
+    assert_eq!(
+        client.try_contribute(&setup.member(0), &setup.amount, &1u32),
+        Err(Ok(GroupError::ArithmeticOverflow))
     );
 }
