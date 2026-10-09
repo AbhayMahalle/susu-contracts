@@ -970,6 +970,228 @@ fn fee_split_truncates_toward_the_recipient() {
     assert_eq!(recipient_amount, 1);
 }
 
+/// PRNG for deterministic property and fuzz testing without external dependencies.
+struct FuzzRng(u64);
+
+impl FuzzRng {
+    const fn new(seed: u64) -> Self {
+        Self(if seed == 0 { 0xdeadbeefcafebabe } else { seed })
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545F4914F6CDD1D)
+    }
+
+    fn next_u128(&mut self) -> u128 {
+        ((self.next_u64() as u128) << 64) | (self.next_u64() as u128)
+    }
+}
+
+/// Property test iterating pools (including i128 extremes and fuzz distributions)
+/// and all valid fee_bps values, asserting:
+/// 1. `fee + recipient_amount == pool` holds exactly for every pair.
+/// 2. `fee` is always the integer floor of the exact ratio `pool * fee_bps / 10_000`.
+/// 3. The fee never exceeds `pool * fee_bps / 10_000`.
+/// 4. Remainder is non-negative and strictly less than `BPS_DENOMINATOR`.
+#[test]
+fn fee_split_property_fuzz_across_pools_and_all_valid_fee_bps() {
+    let mut rng = FuzzRng::new(0x1337c0de5eed);
+
+    for fee_bps in 1..=MAX_FEE_BPS {
+        let bps = fee_bps as i128;
+        let max_safe_pool = i128::MAX / bps;
+
+        // Structured representative pools covering zero, small amounts, currency units,
+        // intermediate values, and upper bounds up to max_safe_pool.
+        let fixed_pools: [i128; 39] = [
+            0,
+            1,
+            2,
+            3,
+            5,
+            7,
+            9,
+            10,
+            11,
+            42,
+            99,
+            100,
+            101,
+            9_999,
+            10_000,
+            10_001,
+            19_999,
+            20_000,
+            20_001,
+            99_999,
+            100_000,
+            100_001,
+            ONE_USDC,
+            10 * ONE_USDC,
+            30 * ONE_USDC,
+            100 * ONE_USDC,
+            100_000_000,
+            1_000_000_000,
+            123_456_789_012_345,
+            1_000_000_000_000_000_000,
+            max_safe_pool / 4,
+            max_safe_pool / 3,
+            max_safe_pool / 2,
+            (max_safe_pool / 3) * 2,
+            (max_safe_pool / 4) * 3,
+            (max_safe_pool / 10) * 9,
+            max_safe_pool - 10_000,
+            max_safe_pool - 1,
+            max_safe_pool,
+        ];
+
+        let test_pool = |pool: i128| {
+            let (fee, recipient_amount) = split_pool(pool, fee_bps)
+                .unwrap_or_else(|e| panic!("split_pool({pool}, {fee_bps}) failed: {e:?}"));
+
+            // Invariant: fee + recipient_amount == pool
+            assert_eq!(
+                fee + recipient_amount,
+                pool,
+                "fee + recipient_amount must equal pool (pool={pool}, fee_bps={fee_bps})"
+            );
+
+            assert!(
+                fee >= 0,
+                "fee must not be negative (pool={pool}, fee_bps={fee_bps})"
+            );
+            assert!(
+                recipient_amount <= pool,
+                "recipient_amount must not exceed pool (pool={pool}, fee_bps={fee_bps})"
+            );
+            assert!(
+                recipient_amount >= 0,
+                "recipient_amount must not be negative (pool={pool}, fee_bps={fee_bps})"
+            );
+
+            let numerator = pool * bps;
+            let expected_fee = numerator / BPS_DENOMINATOR;
+
+            // Invariant: fee is always the floor of the exact ratio pool * fee_bps / 10_000
+            assert_eq!(
+                fee, expected_fee,
+                "fee must match floor of exact ratio (pool={pool}, fee_bps={fee_bps})"
+            );
+
+            // Fee never exceeds pool * fee_bps / 10_000
+            assert!(
+                fee * BPS_DENOMINATOR <= numerator,
+                "fee must never exceed pool * fee_bps / 10_000 (pool={pool}, fee_bps={fee_bps})"
+            );
+
+            // Remainder in [0, 10_000), proving exact floor truncation
+            let remainder = numerator - fee * BPS_DENOMINATOR;
+            assert!(
+                (0..BPS_DENOMINATOR).contains(&remainder),
+                "remainder {remainder} must be in [0, 10_000) (pool={pool}, fee_bps={fee_bps})"
+            );
+        };
+
+        for &pool in &fixed_pools {
+            test_pool(pool);
+        }
+
+        // Powers of 2 and offsets up to max_safe_pool
+        for shift in 1..127 {
+            if let Some(p) = 1i128.checked_shl(shift) {
+                if p <= max_safe_pool {
+                    test_pool(p);
+                    test_pool(p - 1);
+                    if p < max_safe_pool {
+                        test_pool(p + 1);
+                    }
+                }
+            }
+        }
+
+        // Powers of 10 and offsets up to max_safe_pool
+        let mut pow10: i128 = 1;
+        while let Some(next) = pow10.checked_mul(10) {
+            if next > max_safe_pool {
+                break;
+            }
+            pow10 = next;
+            test_pool(pow10);
+            test_pool(pow10 - 1);
+            if pow10 < max_safe_pool {
+                test_pool(pow10 + 1);
+            }
+        }
+
+        // Property fuzzing: 200 pseudo-random pools distributed up to max_safe_pool
+        for _ in 0..200 {
+            let rand_val = (rng.next_u128() % (max_safe_pool as u128 + 1)) as i128;
+            test_pool(rand_val);
+        }
+    }
+}
+
+/// Boundary pools near and above overflow threshold fail with ArithmeticOverflow, not a panic.
+#[test]
+fn boundary_pools_near_overflow_fail_with_arithmetic_overflow() {
+    for fee_bps in 1..=MAX_FEE_BPS {
+        let bps = fee_bps as i128;
+        let max_safe_pool = i128::MAX / bps;
+
+        // Boundary: highest non-overflowing pool succeeds
+        let (fee, recipient) = split_pool(max_safe_pool, fee_bps)
+            .expect("max_safe_pool must succeed without overflow");
+        assert_eq!(fee + recipient, max_safe_pool);
+        assert_eq!(fee, (max_safe_pool * bps) / BPS_DENOMINATOR);
+
+        // When fee_bps > 1, max_safe_pool < i128::MAX; any pool above it overflows checked_mul
+        if fee_bps > 1 {
+            let overflow_boundary_pools = [
+                max_safe_pool + 1,
+                max_safe_pool + 2,
+                max_safe_pool + 10_000,
+                i128::MAX - 1,
+                i128::MAX,
+            ];
+
+            for &overflow_pool in &overflow_boundary_pools {
+                assert_eq!(
+                    split_pool(overflow_pool, fee_bps),
+                    Err(GroupError::ArithmeticOverflow),
+                    "pool {overflow_pool} with fee_bps {fee_bps} must return ArithmeticOverflow, not panic"
+                );
+            }
+        } else {
+            // At 1 bps, max_safe_pool is i128::MAX
+            assert_eq!(max_safe_pool, i128::MAX);
+        }
+
+        // Negative boundary checks near i128::MIN
+        let min_safe_pool = i128::MIN / bps;
+        if fee_bps > 1 {
+            let min_overflow_pools = [
+                min_safe_pool - 1,
+                min_safe_pool - 2,
+                min_safe_pool - 10_000,
+                i128::MIN,
+            ];
+
+            for &min_overflow in &min_overflow_pools {
+                assert_eq!(
+                    split_pool(min_overflow, fee_bps),
+                    Err(GroupError::ArithmeticOverflow),
+                    "negative pool {min_overflow} with fee_bps {fee_bps} must return ArithmeticOverflow"
+                );
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Storage, TTL and views
 // ---------------------------------------------------------------------------
