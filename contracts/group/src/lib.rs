@@ -273,6 +273,18 @@ pub struct MemberJoined {
     pub position: u32,
 }
 
+/// The group was initialized with its immutable configuration.
+#[contractevent(topics = ["susu", "initialized"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupInitialized {
+    pub token: Address,
+    pub treasury: Address,
+    pub contribution_amount: i128,
+    pub member_capacity: u32,
+    pub frequency_seconds: u64,
+    pub fee_bps: u32,
+}
+
 /// The group reached capacity and started running rounds.
 #[contractevent(topics = ["susu", "start"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -386,6 +398,16 @@ impl GroupContract {
         storage.set(&DataKey::RoundPhase, &RoundPhase::WaitingForContributions);
         storage.set(&DataKey::MemberCount, &0u32);
         extend_instance_ttl(&env);
+
+        GroupInitialized {
+            token: config.token,
+            treasury: config.treasury,
+            contribution_amount: config.contribution_amount,
+            member_capacity: config.member_capacity,
+            frequency_seconds: config.frequency_seconds,
+            fee_bps: config.fee_bps,
+        }
+        .publish(&env);
     }
 
     /// Join the group, taking the next position in the payout order.
