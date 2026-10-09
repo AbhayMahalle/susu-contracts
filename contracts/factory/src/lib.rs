@@ -325,6 +325,9 @@ impl FactoryContract {
 
         let storage = env.storage().instance();
         let mut config = load_config(&env)?;
+        if config.paused {
+            return Ok(());
+        }
         config.paused = true;
         storage.set(&DataKey::Config, &config);
 
@@ -339,6 +342,9 @@ impl FactoryContract {
 
         let storage = env.storage().instance();
         let mut config = load_config(&env)?;
+        if !config.paused {
+            return Ok(());
+        }
         config.paused = false;
         storage.set(&DataKey::Config, &config);
 
