@@ -159,6 +159,62 @@ fn constructor_stores_configuration_and_opens_the_group() {
 }
 
 #[test]
+fn constructor_publishes_the_initial_configuration() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let factory = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let treasury = Address::generate(&env);
+    let amount = 10 * ONE_USDC;
+    let capacity = 3u32;
+    let fee_bps = MAX_FEE_BPS;
+
+    let group_id = env.register(
+        GroupContract,
+        (
+            factory.clone(),
+            creator.clone(),
+            token.clone(),
+            treasury.clone(),
+            amount,
+            capacity,
+            ONE_WEEK,
+            fee_bps,
+        ),
+    );
+
+    // The constructor is the only invocation so far, so `events().all()` is exactly
+    // what it published. Assert exactly one event, carrying the full configuration,
+    // so a duplicated emission would also fail.
+    let emitted = env.events().all().filter_by_contract(&group_id);
+    let expected = GroupInitialized {
+        factory,
+        creator,
+        token,
+        treasury,
+        contribution_amount: amount,
+        member_capacity: capacity,
+        frequency_seconds: ONE_WEEK,
+        fee_bps,
+    }
+    .to_xdr(&env, &group_id);
+
+    assert_eq!(
+        emitted
+            .events()
+            .iter()
+            .filter(|event| **event == expected)
+            .count(),
+        1,
+        "the constructor must publish exactly one GroupInitialized event"
+    );
+}
+
+#[test]
 #[should_panic]
 fn constructor_rejects_non_positive_contribution_amount() {
     let env = Env::default();
