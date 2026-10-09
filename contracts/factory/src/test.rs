@@ -361,8 +361,23 @@ fn constructor_rejects_treasury_equal_to_admin() {
 }
 
 #[test]
+#[should_panic]
+fn constructor_rejects_treasury_equal_to_factory() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let factory_id = Address::generate(&env);
+    let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+    env.register_at(
+        &factory_id,
+        FactoryContract,
+        (admin, wasm_hash, factory_id.clone(), MAX_FEE_BPS),
+    );
+}
+
+#[test]
 fn set_treasury_rejects_admin_or_factory_address() {
-    let (_env, admin, _, client) = setup(MAX_FEE_BPS);
+    let (env, admin, initial_treasury, client) = setup(MAX_FEE_BPS);
     let factory_addr = client.address.clone();
 
     let res_admin = client.try_set_treasury(&admin);
@@ -370,4 +385,12 @@ fn set_treasury_rejects_admin_or_factory_address() {
 
     let res_factory = client.try_set_treasury(&factory_addr);
     assert_eq!(res_factory, Err(Ok(FactoryError::InvalidTreasury)));
+
+    // Treasury remains unchanged after failed attempts
+    assert_eq!(client.get_config().treasury, initial_treasury);
+
+    // A valid treasury still succeeds
+    let valid_treasury = Address::generate(&env);
+    assert!(client.try_set_treasury(&valid_treasury).is_ok());
+    assert_eq!(client.get_config().treasury, valid_treasury);
 }
