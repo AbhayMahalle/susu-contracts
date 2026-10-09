@@ -292,7 +292,6 @@ to filter by them.
 
 | Event | Topics | Data |
 |---|---|---|
-| `GroupInitialized` | `susu`, `initialized` | `token`, `treasury`, `contribution_amount`, `member_capacity`, `frequency_seconds`, `fee_bps` |
 | `MemberJoined` | `susu`, `join` | `member`, `position` |
 | `GroupStarted` | `susu`, `start` | `member_count` |
 | `ContributionReceived` | `susu`, `contribution` | `member`, `round`, `amount` |
