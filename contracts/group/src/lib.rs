@@ -319,6 +319,27 @@ pub struct GroupCompleted {
     pub rounds: u32,
 }
 
+/// The group was constructed with its full immutable configuration.
+///
+/// The Factory's `group_created` event records a group's existence, but the group
+/// itself previously published nothing at construction, so its own configuration
+/// had no on-chain record an indexer could reconcile against — and a group deployed
+/// by any other route had none at all. This pins the exact values the group started
+/// from, so its full history is reconstructable from the group's own events. The
+/// fields mirror `GroupConfig`, which is captured once and never modified.
+#[contractevent(topics = ["susu", "group_initialized"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupInitialized {
+    pub factory: Address,
+    pub creator: Address,
+    pub token: Address,
+    pub treasury: Address,
+    pub contribution_amount: i128,
+    pub member_capacity: u32,
+    pub frequency_seconds: u64,
+    pub fee_bps: u32,
+}
+
 /// The Susu Group contract type.
 #[contract]
 pub struct GroupContract;
@@ -391,6 +412,18 @@ impl GroupContract {
         storage.set(&DataKey::RoundPhase, &RoundPhase::WaitingForContributions);
         storage.set(&DataKey::MemberCount, &0u32);
         extend_instance_ttl(&env);
+
+        GroupInitialized {
+            factory: config.factory.clone(),
+            creator: config.creator.clone(),
+            token: config.token.clone(),
+            treasury: config.treasury.clone(),
+            contribution_amount: config.contribution_amount,
+            member_capacity: config.member_capacity,
+            frequency_seconds: config.frequency_seconds,
+            fee_bps: config.fee_bps,
+        }
+        .publish(&env);
     }
 
     /// Join the group, taking the next position in the payout order.
