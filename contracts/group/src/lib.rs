@@ -254,6 +254,8 @@ pub enum GroupError {
     SplitInvariantViolated = 19,
     /// Treasury address cannot be the group contract address.
     InvalidTreasury = 20,
+    /// Token address cannot be the group contract address.
+    InvalidToken = 21,
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +362,9 @@ impl GroupContract {
         }
         if treasury == env.current_contract_address() {
             soroban_sdk::panic_with_error!(&env, GroupError::InvalidTreasury);
+        }
+        if token == env.current_contract_address() {
+            soroban_sdk::panic_with_error!(&env, GroupError::InvalidToken);
         }
         // The fee ceiling is enforced here *and* in the Factory, so a group can
         // never charge more than the protocol maximum even if it were deployed
