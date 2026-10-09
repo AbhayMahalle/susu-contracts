@@ -177,6 +177,44 @@ fn pause_requires_admin_authorization() {
     assert!(client.try_unpause().is_err());
 }
 
+#[test]
+fn pause_and_unpause_are_noop_when_state_is_unchanged() {
+    let (env, _, _, client) = setup(MAX_FEE_BPS);
+    assert!(!client.get_config().paused);
+
+    // Initial pause: state becomes paused, emits 1 event
+    client.pause();
+    let first_pause_events = env.events().all().filter_by_contract(&client.address);
+    assert!(client.get_config().paused);
+    let expected_paused = PauseUpdated { paused: true }.to_xdr(&env, &client.address);
+    assert!(first_pause_events.events().contains(&expected_paused));
+
+    // Calling pause again while already paused: returns Ok(()), emits no new events
+    let res = client.try_pause();
+    let second_pause_events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(res, Ok(Ok(())));
+    assert!(
+        second_pause_events.events().is_empty(),
+        "second pause must not emit PauseUpdated"
+    );
+
+    // Initial unpause: state becomes unpaused, emits 1 event
+    client.unpause();
+    let first_unpause_events = env.events().all().filter_by_contract(&client.address);
+    assert!(!client.get_config().paused);
+    let expected_unpaused = PauseUpdated { paused: false }.to_xdr(&env, &client.address);
+    assert!(first_unpause_events.events().contains(&expected_unpaused));
+
+    // Calling unpause again while already unpaused: returns Ok(()), emits no new events
+    let res_unpause = client.try_unpause();
+    let second_unpause_events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(res_unpause, Ok(Ok(())));
+    assert!(
+        second_unpause_events.events().is_empty(),
+        "second unpause must not emit PauseUpdated"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Group lookup
 // ---------------------------------------------------------------------------
